@@ -1,0 +1,7 @@
+cat << EOF > /etc/bgpd-as4r1.conf
+hostname bgpd
+password zebra
+router bgp 4
+log stdout
+EOF
+bgpd -d -f /etc/bgpd-as4r1.conf -i /tmp/bgpd-as4r1.pid
