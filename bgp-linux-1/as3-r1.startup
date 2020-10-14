@@ -1,7 +1,7 @@
 cat << EOF > /etc/bgpd-as3r1.conf
 hostname bgpd
 password zebra
-router bgp 3
 log stdout
+router bgp 3
 EOF
 bgpd -d -f /etc/bgpd-as3r1.conf -i /tmp/bgpd-as3r1.pid
