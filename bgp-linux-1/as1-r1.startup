@@ -2,6 +2,13 @@ cat << EOF > /etc/bgpd-as1r1.conf
 hostname bgpd
 password zebra
 log stdout
+route-map from-as2 permit 10
+ set local-preference 200
 router bgp 1
+ bgp router-id 192.168.0.1
+ neighbor 10.0.1.2 remote-as 1
+ neighbor 10.0.2.2 remote-as 2
+ neighbor 10.0.2.2 route-map from-as2 in 
+ network 172.21.0.0/16
 EOF
 bgpd -d -f /etc/bgpd-as1r1.conf -i /tmp/bgpd-as1r1.pid

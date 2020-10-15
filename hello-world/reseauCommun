@@ -7,13 +7,17 @@ BRCTL=/sbin/brctl
 BRIDGE=/sbin/bridge
 CHMOD=/bin/chmod
 CP=/bin/cp
+GNOME_TERM=/usr/bin/gnome-terminal
 IP=/sbin/ip
 KILL=/bin/kill
 MKFIFO=/usr/bin/mkfifo
 MKDIR=/bin/mkdir
 RM=/bin/rm
+SHELLL=/usr/bin/bash
 TOUCH=/usr/bin/touch
 TRUE=/bin/true
+XFCE_TERM=/usr/bin/xfce4-terminal-NO
+XTERM=/usr/bin/xterm
 
 if [ $UID != 0 ] ; then
    echo "Il est nécessaire d'être administrateur"
@@ -25,6 +29,7 @@ LABCONF=$BASEDIR/lab.conf
 LABSTARTUP=$BASEDIR/lab.startup
 LABPOSTBOOT=$BASEDIR/lab.postboot
 BASHRC=./bashrc
+
 
 if [ $VERBOSE == True ] ; then
   echo "* Chargement du fichier de configuration"
@@ -146,18 +151,28 @@ analyseUnLien () {
 }
 
 # Open a console on a given host
-
 runConsoleOnHost () {
    h=$1
    if [ -z "`$IP netns list|grep $h`" ] ; then
       echo "*** Unknown host '$h'"
    else
-       CMD=bash
+      CMD=$SHELLL
       if [ -n "$BASHRC" -a -f $BASHRC ] ; then
          CMD="$CMD --rcfile $BASHRC"
       fi
 
-      $IP netns exec $h xterm -title "$h" -e $CMD &
+      # if gnome terminal is available ...
+      if [ -f $GNOME_TERM ] ; then
+         TERM="dbus-launch $GNOME_TERM --"
+      # ... if xfce terminal is available ...
+      elif [ -f $XFCE_TERM ] ; then
+         TERM="$XFCE_TERM -x"
+      # ... otherwise, fallback to xterm
+      else
+         TERM="$XTERM -e"
+      fi
+      
+      $IP netns exec $h $TERM $CMD >/dev/null 2>&1  &
       echo $! >> ./.console-pids
    fi
    

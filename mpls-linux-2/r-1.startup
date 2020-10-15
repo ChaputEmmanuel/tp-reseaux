@@ -1,0 +1,10 @@
+/sbin/sysctl -w net.mpls.platform_labels=4096
+for i in lo  fe0 fe1 fe2 fe3 all default
+do
+   /sbin/sysctl -w net.ipv4.conf.${i}.rp_filter=0
+   /sbin/sysctl -w net.mpls.conf.${i}.input=1
+done
+
+echo "101 clientA" >>  /etc/iproute2/rt_tables
+echo "102 clientB" >>  /etc/iproute2/rt_tables
+/sbin/sysctl net.ipv4.ip_forward=1
