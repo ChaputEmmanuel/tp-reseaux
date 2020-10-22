@@ -1,0 +1,2 @@
+# Script de startup pour le routeur 2 de l'AS 2
+bgpd -d -f  ./bgpd-as2-r2.conf -i /tmp/bgpd-as2r2.pid

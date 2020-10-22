@@ -1,0 +1,215 @@
+#!/bin/bash
+
+. `dirname $0`/reseauCommun
+
+if [ $VERBOSE == True ] ; then
+  echo "* Paramétrage du lab"
+fi
+
+if [ -f $LABSTARTUP ] ; then 
+   . $LABSTARTUP
+fi
+
+# Création des machines
+#======================
+if [ $VERBOSE == True ] ; then
+   echo "* Création des machines"
+fi
+for h in $HOSTS
+do
+   if [ $VERBOSE == True ] ; then
+      echo -n "  . $h : " 
+   fi
+   $IP netns del $h > /dev/null 2>&1 ||$TRUE
+   $IP netns add $h
+   $IP netns exec $h $IP link set lo up
+   if [ $VERBOSE == True ] ; then
+      echo "ok"
+   fi
+done
+
+# Création des switch
+#====================
+if [ $VERBOSE == True ] ; then
+    echo "* Création des bridges"
+fi
+for sw in $BRIDGES
+do
+    if [ $VERBOSE == True ] ; then
+	echo "    Création de $sw"
+    fi
+    #$BRCTL addbr $sw
+    $IP link add name $sw type bridge
+    $BRIDGE vlan del dev $sw vid 1 self
+    if [ $VERBOSE == True ] ; then
+	echo "    Activation de $sw"
+    fi
+    $IP link set $sw up
+    if [ $VERBOSE == True ] ; then
+	echo "    $sw OK"
+    fi
+done
+
+# Création des réseaux
+#=====================
+if [ $VERBOSE == True ] ; then
+   echo "* Création des réseaux"
+fi
+
+
+IFLIST=""
+for l in $LINKS
+do
+
+   analyseUnLien $l
+
+   # Build the link
+   #---------------
+   if [ "$dstIsBr" == "no" ] ; then
+      # Source is then *not* a bridge
+      $IP netns exec $srch $IP link add $srci type veth peer name $dsti netns $dsth
+      if [ "$doSetUp" == "True" ] ; then
+         $IP netns exec $srch $IP link set $srci up
+         $IP netns exec $dsth $IP link set $dsti up
+      fi
+      
+      if [ -n ""$srca ] ; then
+         $IP netns exec $srch $IP addr add $srca dev $srci
+      fi
+      if [ -n ""$dsta ] ; then
+         $IP netns exec $dsth $IP addr add $dsta dev $dsti
+      fi
+   else
+      if [ $VERBOSE == True ] ; then
+	  echo -n "    Adding $dsth.$dsti ... "
+      fi
+      if [ "$srcIsBr" == "no" ] ; then
+          $IP link add $dsth.$dsti type veth peer name $srci netns $srch
+          if [ "$doSetUp" == "True" ] ; then
+             $IP link set $dsth.$dsti up
+	     $IP netns exec $srch $IP link set $srci up
+	  fi
+	  
+	  if [ -n "$srca" ] ; then
+              $IP netns exec $srch $IP addr add $srca dev $srci
+	  fi
+      else    # Br2br
+           if [ $VERBOSE == True ] ; then
+              echo -n  " connecting to $srch.$srci"
+          fi
+          $IP link add $dsth.$dsti type veth peer name $srch.$srci
+          if [ "$doSetUp" == "True" ] ; then
+             $IP link set $dsth.$dsti up
+	     $IP link set $srch.$srci up
+	  fi
+	  
+          #$BRCTL addif $srch $srch.$srci
+	  $IP link set dev $srch.$srci master $srch
+	  $BRIDGE vlan del vid 1 dev $srch.$srci 
+      fi
+      #$BRCTL addif $dsth $dsth.$dsti
+      $IP link set dev $dsth.$dsti master $dsth
+      $BRIDGE vlan del vid 1 dev $dsth.$dsti
+      
+      if [ $VERBOSE == True ] ; then
+          echo " OK"
+      fi
+   fi
+done
+
+#--------------------------------------------------------------------
+# Run startup script
+#--------------------------------------------------------------------
+if [ $VERBOSE == True ] ; then
+    echo "* Lancement des scripts"
+fi
+# We need a file in the main /etc
+$TOUCH /etc/ns-startup
+$MKDIR /etc/netns > /dev/null 2>&1
+for h in $HOSTS
+do
+   if [ -f ${h}.startup ] ; then
+      $MKDIR /etc/netns/$h > /dev/null 2>&1
+      $CP ${h}.startup /etc/netns/$h/ns-startup
+      $IP netns exec $h /bin/bash /etc/ns-startup > /dev/null 2>&1 ||$TRUE
+   fi
+done
+
+if [ -f $LABPOSTBOOT ] ; then 
+   . $LABPOSTBOOT
+fi
+
+#--------------------------------------------------------------------
+# Snoop
+#--------------------------------------------------------------------
+if [ $VERBOSE == True ] ; then
+    echo "* Lancement des tcpdump"
+fi
+
+WIRESHARK_IF=""
+$RM -rf /tmp/nssi > /dev/null 2>&1 ||$TRUE
+$MKDIR /tmp/nssi > /dev/null 2>&1 ||$TRUE
+$CHMOD a+rx /tmp/nssi
+$RM ./.tcpdump-pids > /dev/null 2>&1 ||$TRUE
+$RM $BASEDIR/run-tcpdump > /dev/null 2>&1 ||$TRUE
+cat <<EOF > $BASEDIR/run-tcpdump
+#!/bin/bash
+
+while (true)
+do
+   tcpdump -U -i \$1 -w \$2
+done
+   
+EOF
+$CHMOD +x $BASEDIR/run-tcpdump
+
+if [ "$DUMPIF" == "all" ] ; then
+   DUMPIF=$IFLIST
+fi
+for snoopi in $DUMPIF
+do
+   h=`echo $snoopi|cut -d: -f1`
+   if [ -z ""$h ] ; then
+      echo "*** No snoop host defined in '$snoopi'"
+      exit
+   fi
+   if [ -z "`$IP netns list|grep $h`" ] ; then
+      echo "*** Unknown snoop host '$h'"
+      exit
+   fi
+   i=`echo $snoopi|cut -d: -f2`
+   if [ -z ""$i ] ; then
+      echo "*** No snoop interface defined in '$snoopi'"
+      exit
+   fi
+
+   $MKDIR /tmp/nssi/$h > /dev/null 2>&1 ||$TRUE
+   $CHMOD a+rx /tmp/nssi/$h
+   $MKFIFO /tmp/nssi/$h/$i
+   $CHMOD a+r /tmp/nssi/$h
+
+   WIRESHARK_IF="$WIRESHARK_IF -i /tmp/nssi/$h/$i "
+
+   $IP netns exec $h $BASEDIR/run-tcpdump $i /tmp/nssi/$h/$i > /dev/null 2>&1 & 
+   echo $! >> ./.tcpdump-pids
+done
+
+#--------------------------------------------------------------------
+# Open consoles
+#--------------------------------------------------------------------
+if [ $VERBOSE == True ] ; then
+    echo "* Ouverture des consoles"
+fi
+
+$RM ./.console-pids > /dev/null 2>&1 ||$TRUE
+
+for h in $CONSOLES
+do
+    runConsoleOnHost $h
+done
+
+if [ -n "$WIRESHARK_IF" ] ; then
+   echo "Vous pouvez utiliser les options suivantes de wireshark :"
+   echo "wireshark $WIRESHARK_IF"
+fi
+

@@ -1,0 +1,2 @@
+# Script de startup pour le routeur 1 de l'AS 3
+bgpd -d -f  ./bgpd-as3-r1.conf -i /tmp/bgpd-as3r1.pid
