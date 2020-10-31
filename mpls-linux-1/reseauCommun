@@ -7,7 +7,7 @@ BRCTL=/sbin/brctl
 BRIDGE=/sbin/bridge
 CHMOD=/bin/chmod
 CP=/bin/cp
-GNOME_TERM=/usr/bin/gnome-terminal
+GNOME_TERM=/usr/bin/gnome-terminal-NO
 IP=/sbin/ip
 KILL=/bin/kill
 MKFIFO=/usr/bin/mkfifo
@@ -16,7 +16,7 @@ RM=/bin/rm
 SHELLL=/usr/bin/bash
 TOUCH=/usr/bin/touch
 TRUE=/bin/true
-XFCE_TERM=/usr/bin/xfce4-terminal-NO
+XFCE_TERM=/usr/bin/xfce4-terminal
 XTERM=/usr/bin/xterm
 
 if [ $UID != 0 ] ; then
