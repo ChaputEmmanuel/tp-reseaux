@@ -210,6 +210,6 @@ done
 
 if [ -n "$WIRESHARK_IF" ] ; then
    echo "Vous pouvez utiliser les options suivantes de wireshark :"
-   echo "wireshark $WIRESHARK_IF"
+   echo "sudo wireshark $WIRESHARK_IF"
 fi
 
