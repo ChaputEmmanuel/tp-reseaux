@@ -67,17 +67,32 @@ do
    #---------------
    if [ "$dstIsBr" == "no" ] ; then
       # Source is then *not* a bridge
-      $IP netns exec $srch $IP link add $srci type veth peer name $dsti netns $dsth
-      if [ "$doSetUp" == "True" ] ; then
-         $IP netns exec $srch $IP link set $srci up
-         $IP netns exec $dsth $IP link set $dsti up
-      fi
+       if [ "$dsth" == "-" ] ; then
+         $IP link add $dsti type veth peer name $srci netns $srch
+         if [ "$doSetUp" == "True" ] ; then
+            $IP netns exec $srch $IP link set $srci up
+            $IP link set $dsti up
+         fi
       
-      if [ -n ""$srca ] ; then
-         $IP netns exec $srch $IP addr add $srca dev $srci
-      fi
-      if [ -n ""$dsta ] ; then
-         $IP netns exec $dsth $IP addr add $dsta dev $dsti
+         if [ -n ""$srca ] ; then
+            $IP netns exec $srch $IP addr add $srca dev $srci
+         fi
+         if [ -n ""$dsta ] ; then
+            $IP addr add $dsta dev $dsti
+         fi
+      else
+         $IP netns exec $srch $IP link add $srci type veth peer name $dsti netns $dsth
+         if [ "$doSetUp" == "True" ] ; then
+            $IP netns exec $srch $IP link set $srci up
+            $IP netns exec $dsth $IP link set $dsti up
+         fi
+      
+         if [ -n ""$srca ] ; then
+            $IP netns exec $srch $IP addr add $srca dev $srci
+         fi
+         if [ -n ""$dsta ] ; then
+            $IP netns exec $dsth $IP addr add $dsta dev $dsti
+         fi
       fi
    else
       if [ $VERBOSE == True ] ; then

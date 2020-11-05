@@ -31,18 +31,10 @@ LABPOSTBOOT=$BASEDIR/lab.postboot
 BASHRC=./bashrc
 
 
-if [ $VERBOSE == True ] ; then
-  echo "* Chargement du fichier de configuration"
-fi
-
-if [ -f $LABCONF ] ; then 
-   . $LABCONF
-fi
-
 analyseUnLien () {
    l=$1
 
-   # Format h:i[:@]!h:i[:@]
+   # Format [-]h:i[:@]!{h-}:i[:@]
    #-----------------------
    if [ $VERBOSE == True ] ; then
        echo "    Link $l ..."
@@ -109,7 +101,10 @@ analyseUnLien () {
       exit
    fi
    dstIsBr=no
-   if [ -z "`$IP netns list|grep $dsth`" ] ; then
+
+   if [ "$dsth" == "-" ] ; then
+      echo "Pouet pouet" > /dev/null
+   elif [ -z "`$IP netns list|grep $dsth`" ] ; then
        for br in $BRIDGES
        do
 	   if [ $br == $dsth ] ; then
@@ -178,12 +173,27 @@ runConsoleOnHost () {
    
 }
 
+# Load lab.conf
+loadLabConf () {
+   if [ $VERBOSE == True ] ; then
+     echo "* Chargement du fichier de configuration '$LABCONF'"
+   fi
+
+   if [ -f $LABCONF ] ; then 
+      . $LABCONF
+   fi
+}
+
 # Parse command line options
 while [[ $# > 0 ]] ;
 do
    case "$1" in
       -v )
          VERBOSE=True
+      ;;
+      -f )
+         shift
+	 LABCONF="$1" 
       ;;
       -r )
          shift
@@ -201,4 +211,5 @@ do
    shift
 done
 
+loadLabConf
 

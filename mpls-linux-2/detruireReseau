@@ -38,8 +38,13 @@ do
    if [ "$dstIsBr" == "no" ] ; then
       $IP netns exec $srch $IP link set $srci down > /dev/null 2>&1 ||$TRUE
       $IP netns exec $srch $IP link del $srci > /dev/null 2>&1 ||$TRUE
-      $IP netns exec $dsth $IP link set $dsti down > /dev/null 2>&1 ||$TRUE
-      $IP netns exec $dsth $IP link del $dsti > /dev/null 2>&1 ||$TRUE
+      if [ "$dsth" == "-" ] ; then
+         $IP link set $dsti down > /dev/null 2>&1 ||$TRUE
+         $IP link del $dsti > /dev/null 2>&1 ||$TRUE
+      else 
+         $IP netns exec $dsth $IP link set $dsti down > /dev/null 2>&1 ||$TRUE
+         $IP netns exec $dsth $IP link del $dsti > /dev/null 2>&1 ||$TRUE
+      fi
    else
       if [ "$srcIsBr" == "no" ] ; then
           $IP netns exec $srch $IP link set $srci down > /dev/null 2>&1 ||$TRUE
