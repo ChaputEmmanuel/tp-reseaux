@@ -1,0 +1,96 @@
+#!/bin/bash
+
+. `dirname $0`/reseauCommun
+
+if [ $VERBOSE == True ] ; then
+   echo "* Fermeture des consoles"
+fi
+if [ -f .console-pids ] ; then 
+   for c in `cat .console-pids`
+   do
+       $KILL $c
+   done
+   $RM .console-pids
+fi
+
+if [ -f .tcpdump-pids ] ; then 
+   if [ $VERBOSE == True ] ; then
+      echo "* Fermeture des tcpdump"
+   fi
+   for c in `cat .tcpdump-pids`
+   do
+       $KILL $c
+   done
+   $RM .tcpdump-pids
+fi
+
+# Destruction des liens
+#======================
+IFLIST=""
+for l in $LINKS
+do
+   analyseUnLien $l
+
+   if [ $VERBOSE == True ] ; then
+       echo "    Shutting down ink $l ..."
+   fi
+
+   if [ "$dstIsBr" == "no" ] ; then
+      $IP netns exec $srch $IP link set $srci down > /dev/null 2>&1 ||$TRUE
+      $IP netns exec $srch $IP link del $srci > /dev/null 2>&1 ||$TRUE
+      if [ "$dsth" == "-" ] ; then
+         $IP link set $dsti down > /dev/null 2>&1 ||$TRUE
+         $IP link del $dsti > /dev/null 2>&1 ||$TRUE
+      else 
+         $IP netns exec $dsth $IP link set $dsti down > /dev/null 2>&1 ||$TRUE
+         $IP netns exec $dsth $IP link del $dsti > /dev/null 2>&1 ||$TRUE
+      fi
+   else
+      if [ "$srcIsBr" == "no" ] ; then
+          $IP netns exec $srch $IP link set $srci down > /dev/null 2>&1 ||$TRUE
+          $IP netns exec $srch $IP link del $srci > /dev/null 2>&1 ||$TRUE
+      else
+          $IP link set $srch.$srci down > /dev/null 2>&1 ||$TRUE
+          $BRCTL delif $srch $srch.$srci > /dev/null 2>&1 ||$TRUE
+          $IP link del $srch.$srci > /dev/null 2>&1 ||$TRUE
+      fi
+      $IP link set $dsth.$dsti down > /dev/null 2>&1 ||$TRUE
+      $BRCTL delif $dsth $dsth.$dsti > /dev/null 2>&1 ||$TRUE
+      $IP link del $dsth.$dsti > /dev/null 2>&1 ||$TRUE
+   fi
+done
+
+# Arret des machines
+#===================
+if [ $VERBOSE == True ] ; then
+   echo "* Arret des machines"
+fi
+for h in $HOSTS
+do
+   if [ $VERBOSE == True ] ; then
+      echo -n "    $h : "
+   fi
+   
+   $IP netns del $h > /dev/null 2>&1 ||$TRUE
+
+   if [ $VERBOSE == True ] ; then
+      echo "ok"
+   fi
+done
+
+# Destruction des ponts
+#======================
+if [ $VERBOSE == True ] ; then
+   echo "* Arret des ponts"
+fi
+for b in $BRIDGES
+do
+    if [ $VERBOSE == True ] ; then
+	echo "    Désactivation de $b"
+    fi
+    $IP link set $b down
+    if [ $VERBOSE == True ] ; then
+	echo "    Destruction de $b"
+    fi
+    $BRCTL delbr $b
+done
