@@ -1,0 +1,13 @@
+# On termine les processus de FRR. Je sais, ce n'est pas très beau
+
+FRR_HOSTS="host1 host2 host3"
+
+for h in $FRR_HOSTS
+do 
+   kill -9 `cat /var/run/frr/yane-${h}/zebra.pid` 
+   kill -9 `cat /var/run/frr/yane-${h}/bgpd.pid` 
+   rm -fr /etc/frr/yane-$h
+   rm -fr /var/run/frr/yane-$h
+done
+
+

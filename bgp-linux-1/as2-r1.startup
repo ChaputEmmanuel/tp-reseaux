@@ -8,4 +8,4 @@ router bgp 2
  neighbor 10.0.4.2 remote-as 4
  network 172.22.0.0/16
 EOF
-bgpd -d -f /etc/bgpd-as2r1.conf -i /tmp/bgpd-as2r1.pid
+bgpd -d -z /dev/null -f /etc/bgpd-as2r1.conf -i /tmp/bgpd-as2r1.pid

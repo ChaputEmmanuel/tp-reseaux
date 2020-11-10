@@ -1,0 +1,41 @@
+IP=/usr/sbin/ip
+
+declare -A VXH
+VXH[1]="vm31-v0 vm34-v0"
+VXH[2]="vm32-v0 vm35-v0"
+VXH[3]="vm33-v0 vm36-v0"
+
+# Création des VXLANs. Idéalement, ce devrait être fait
+# par creerReseau, mais pas le temps ...
+
+# On les supprime au cas où
+for b in 1 2 3
+do
+   $IP link set br$b down
+   $IP link del br$b type bridge
+   $IP link set vx$b down
+   $IP link del vx$b type vxlan
+done
+
+# On crée les vxlans
+for b in 1 2 3
+do
+   # Création du pont
+   $IP link add br$b type bridge
+   $IP link set br$b up
+   # Création du vxlan
+   $IP link add vx$b type vxlan id $b dstport 4789 local 192.168.31.3 nolearning
+   $IP link set vx$b up
+   # Enslavement des interfaces des machines
+   $IP link set vx$b master br$b
+   for h in ${VXH[$b]}
+   do
+      $IP link set $h master br$b
+   done
+done
+
+# On démarre bgpd
+zebra -d -N yane-host3 -f /etc/frr/yane-host3/zebra.conf
+bgpd -d -N yane-host3 -f /etc/frr/yane-host3/bgpd.conf
+
+

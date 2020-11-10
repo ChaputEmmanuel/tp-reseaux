@@ -27,6 +27,7 @@ fi
 
 LABCONF=$BASEDIR/lab.conf
 LABSTARTUP=$BASEDIR/lab.startup
+LABSHUTDOWN=$BASEDIR/lab.shutdown
 LABPOSTBOOT=$BASEDIR/lab.postboot
 BASHRC=./bashrc
 

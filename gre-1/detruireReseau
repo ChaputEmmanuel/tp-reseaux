@@ -2,6 +2,13 @@
 
 . `dirname $0`/reseauCommun
 
+#--------------------------------------------------------------------
+# Run shutdown script
+#--------------------------------------------------------------------
+if [ -f $LABSHUTDOWN ] ; then
+   . $LABSHUTDOWN
+fi
+
 if [ $VERBOSE == True ] ; then
    echo "* Fermeture des consoles"
 fi

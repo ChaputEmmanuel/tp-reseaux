@@ -6,10 +6,6 @@ if [ $VERBOSE == True ] ; then
   echo "* Paramétrage du lab"
 fi
 
-if [ -f $LABSTARTUP ] ; then 
-   . $LABSTARTUP
-fi
-
 # Création des machines
 #======================
 if [ $VERBOSE == True ] ; then
@@ -135,6 +131,10 @@ done
 #--------------------------------------------------------------------
 # Run startup script
 #--------------------------------------------------------------------
+if [ -f $LABSTARTUP ] ; then 
+   . $LABSTARTUP
+fi
+
 if [ $VERBOSE == True ] ; then
     echo "* Lancement des scripts"
 fi
