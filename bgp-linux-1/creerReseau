@@ -150,6 +150,18 @@ do
    fi
 done
 
+# Running FRR
+if [ -n "$FRR_HOSTS" ] ; then
+   if [ $VERBOSE == True ] ; then
+       echo "* Configuration de FRR"
+   fi
+   populateFRR 
+   if [ $VERBOSE == True ] ; then
+       echo "* Lancement de FRR"
+   fi
+   runFRRDaemons
+fi
+
 if [ -f $LABPOSTBOOT ] ; then 
    . $LABPOSTBOOT
 fi

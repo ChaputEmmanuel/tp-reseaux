@@ -6,8 +6,10 @@ BASEDIR=$PWD
 BRCTL=/sbin/brctl
 BRIDGE=/sbin/bridge
 CHMOD=/bin/chmod
+CHOWN=/bin/chown
 CP=/bin/cp
-GNOME_TERM=/usr/bin/gnome-terminal
+FRR_BIN=/usr/lib/frr
+GNOME_TERM=/usr/bin/gnome-terminal-NO
 IP=/sbin/ip
 KILL=/bin/kill
 MKFIFO=/usr/bin/mkfifo
@@ -16,7 +18,7 @@ RM=/bin/rm
 SHELLL=/usr/bin/bash
 TOUCH=/usr/bin/touch
 TRUE=/bin/true
-XFCE_TERM=/usr/bin/xfce4-terminal-NO
+XFCE_TERM=/usr/bin/xfce4-terminal
 XTERM=/usr/bin/xterm
 
 if [ $UID != 0 ] ; then
@@ -27,22 +29,15 @@ fi
 
 LABCONF=$BASEDIR/lab.conf
 LABSTARTUP=$BASEDIR/lab.startup
+LABSHUTDOWN=$BASEDIR/lab.shutdown
 LABPOSTBOOT=$BASEDIR/lab.postboot
 BASHRC=./bashrc
 
 
-if [ $VERBOSE == True ] ; then
-  echo "* Chargement du fichier de configuration"
-fi
-
-if [ -f $LABCONF ] ; then 
-   . $LABCONF
-fi
-
 analyseUnLien () {
    l=$1
 
-   # Format h:i[:@]!h:i[:@]
+   # Format [-]h:i[:@]!{h-}:i[:@]
    #-----------------------
    if [ $VERBOSE == True ] ; then
        echo "    Link $l ..."
@@ -109,7 +104,10 @@ analyseUnLien () {
       exit
    fi
    dstIsBr=no
-   if [ -z "`$IP netns list|grep $dsth`" ] ; then
+
+   if [ "$dsth" == "-" ] ; then
+      echo "Pouet pouet" > /dev/null
+   elif [ -z "`$IP netns list|grep $dsth`" ] ; then
        for br in $BRIDGES
        do
 	   if [ $br == $dsth ] ; then
@@ -178,12 +176,150 @@ runConsoleOnHost () {
    
 }
 
+# Load lab.conf
+loadLabConf () {
+   if [ $VERBOSE == True ] ; then
+     echo "* Chargement du fichier de configuration '$LABCONF'"
+   fi
+
+   if [ -f $LABCONF ] ; then 
+      . $LABCONF
+   fi
+}
+
+# Populate FRR config for a given list of hosts
+# for each host $h, the content of ./ftt/$h is copied
+# to /etc/frr/yane-$h 
+FRR_HOSTS=""
+populateFRR () {
+   for h in $FRR_HOSTS
+   do 
+      $MKDIR /etc/frr/yane-$h
+      $CP -a ./frr/${h}/* /etc/frr/yane-$h
+      $CHOWN -R frr.frr /etc/frr/yane-$h
+      $MKDIR /var/run/frr/yane-$h
+      $CHOWN -R frr.frr /var/run/frr/yane-$h
+   done     
+}
+
+# Attention, c'est pas du joli, ... plutôt fragile !
+# Le sourçage de daemons est une horreur
+runFRRDaemons () {
+   for h in $FRR_HOSTS
+   do
+     if [ -f /etc/frr/yane-${h}/daemons ] ; then
+	 # Un petit hack poue zebra qui n'est pas configuré mais toujours
+	 # lancé. Pas de ça chez nous
+	 zebra=no
+	 if [ -f /etc/frr/yane-${h}/zebra.conf ] ; then
+            zebra=yes
+	 fi
+	 
+         . /etc/frr/yane-${h}/daemons
+  	 for d in zebra bgpd ripd ospfd pimd ldpd 
+	 do
+            if [ -f /etc/frr/yane-${h}/${d}.conf -a ${!d} == "yes" ] ; then
+               if [ $VERBOSE == True ] ; then
+	          echo "*  On lance $d sur $h : "
+               fi
+	       $IP netns exec $h ${FRR_BIN}/$d -d -N yane-${h} -f /etc/frr/yane-${h}/${d}.conf
+            fi
+	 done
+      fi 
+   done     
+}
+
+removeFRR () {
+for h in $FRR_HOSTS
+   do
+      for p in `cat /var/run/frr/yane-${h}/*.pid`
+      do
+         kill -9 $p
+      done
+      rm -fr /etc/frr/yane-$h
+      rm -fr /var/run/frr/yane-$h
+   done
+}    
+
+#-------------------------------------------------------------------------
+# La doc
+#-------------------------------------------------------------------------
+displayHelp() {
+cat <<EOF
+Version courte
+--------------
+sudo ./creerReseau       <- Démarrer une émulation de réseau
+sudo ./detruireReseau    <- Terminer une émulation en cours
+sudo ./creerReseu -r m   <- Ouvrir un terminal sur la machine m
+                            dans une émulation en cours
+
+Les options
+-----------
+ -f file                 <- Utiliser file comme config réseau
+                            (./lab.conf par défaut)
+ -r m                    <- Run command on m
+ -v                      <- Verbeux
+ -h                      <- Aide minimaliste
+ -H                      <- Documentation
+
+EOF
+}
+
+displayDoc() {
+   displayHelp
+    
+cat <<EOF
+Version longue
+--------------
+
+   Un.e volontaire pour écrire la doc ?
+
+   * Le fichier lab.conf
+
+   Il décrit le réseau avec les variables (shell) suivantes
+
+   . HOSTS      la liste des machines
+   . BRIDGES    la liste des ponts
+   . LINKS      les liens entre ces équipements
+   . FRR_OSTS   les machines sur lesquelles lancer FRR
+   . CONSOLES     "   "       "     "          "   une console
+   . DUMPIF     les interfaces à dumper
+
+   * Les fichiers de config
+
+   . lab.startup    lancé au début
+   . lab.shutdown   lancé à l'arrêt
+
+   * Les fichiers d'init des machines
+
+   ./h.startup pour la machine h
+
+   * Les fichiers de config de FRR
+
+   Dans ./frr/h pour la machine h. Le fichier daemons liste les démons
+à lancer. Un fichier de config par démon est nécessaire pour le lancer.
+
+EOF
+}
+
 # Parse command line options
 while [[ $# > 0 ]] ;
 do
    case "$1" in
+      -h )
+         displayHelp
+         exit
+      ;;
+      -H )
+         displayDoc
+         exit
+      ;;
       -v )
          VERBOSE=True
+      ;;
+      -f )
+         shift
+	 LABCONF="$1" 
       ;;
       -r )
          shift
@@ -201,4 +337,5 @@ do
    shift
 done
 
+loadLabConf
 

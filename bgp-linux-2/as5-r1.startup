@@ -1,2 +1,0 @@
-# Script de startup pour le routeur 1 de l'AS 5
-bgpd -d -f  ./bgpd-as5-r1.conf -i /tmp/bgpd-as5r1.pid

@@ -5,6 +5,14 @@
 #--------------------------------------------------------------------
 # Run shutdown script
 #--------------------------------------------------------------------
+# Shuting down FRR
+if [ -n "$FRR_HOSTS" ] ; then
+   if [ $VERBOSE == True ] ; then
+       echo "* Arrêt de FRR"
+   fi
+   removeFRR 
+fi
+
 if [ -f $LABSHUTDOWN ] ; then
    . $LABSHUTDOWN
 fi
