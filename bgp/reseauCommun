@@ -4,6 +4,7 @@ VERSION=1        # Première version numérotée
 VERSION=2        # Introduction de -r h "Commande avec argument"
 VERSION=3        # Lancement de tous les FRR par défaut
 VERSION=4        # Ajout de -x et fonctions run/kill FRRdaemon
+VERSION=5        # Sysctl sur les routeurs (définition de ROUTERS)
 
 VERBOSE=False
 
@@ -20,7 +21,8 @@ KILL=/bin/kill
 MKFIFO=/usr/bin/mkfifo
 MKDIR=/bin/mkdir
 RM=/bin/rm
-SHELLL=/usr/bin/bash
+SHELLL=/bin/bash
+SYSCTL=/usr/sbin/sysctl
 TOUCH=/usr/bin/touch
 TRUE=/bin/true
 XFCE_TERM=/usr/bin/xfce4-terminal
@@ -38,6 +40,16 @@ LABSHUTDOWN=$BASEDIR/lab.shutdown
 LABPOSTBOOT=$BASEDIR/lab.postboot
 BASHRC=./bashrc
 
+# Est-ce que $2 est dans la liste $1 ?
+aContientB () {
+   for item in $1
+   do
+      if [ "$2" == "$item" ]; then
+         return 0
+      fi
+   done
+   return 1
+}
 
 analyseUnLien () {
    l=$1
@@ -312,7 +324,9 @@ Version longue
 
    Il décrit le réseau avec les variables (shell) suivantes
 
-   . HOSTS          la liste des machines
+   . ROUTERS        la liste des routeurs (le routage y sera activé, c'est
+                    la seule différence avec une machine)
+   . HOSTS          la liste de *toutes* les machines (y compris les routeurs)
    . BRIDGES        la liste des ponts
    . LINKS          les liens entre ces équipements
    . FRR_OSTS       les machines sur lesquelles lancer FRR (voir ci dessous)

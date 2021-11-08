@@ -19,6 +19,13 @@ do
    $IP netns del $h > /dev/null 2>&1 ||$TRUE
    $IP netns add $h
    $IP netns exec $h $IP link set lo up
+   if aContientB "$ROUTERS" "$h" ; then
+      if [ $VERBOSE == True ] ; then
+         echo " (routeur) "
+      fi
+      $IP netns exec $h $SYSCTL -w net.ipv4.ip_forward=1  > /dev/null 2>&1 ||$TRUE
+   fi
+   
    if [ $VERBOSE == True ] ; then
       echo "ok"
    fi

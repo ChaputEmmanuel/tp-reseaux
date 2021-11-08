@@ -3,6 +3,8 @@
 VERSION=1        # Première version numérotée
 VERSION=2        # Introduction de -r h "Commande avec argument"
 VERSION=3        # Lancement de tous les FRR par défaut
+VERSION=4        # Ajout de -x et fonctions run/kill FRRdaemon
+VERSION=5        # Sysctl sur les routeurs (définition de ROUTERS)
 
 VERBOSE=False
 
@@ -19,7 +21,8 @@ KILL=/bin/kill
 MKFIFO=/usr/bin/mkfifo
 MKDIR=/bin/mkdir
 RM=/bin/rm
-SHELLL=/usr/bin/bash
+SHELLL=/bin/bash
+SYSCTL=/usr/sbin/sysctl
 TOUCH=/usr/bin/touch
 TRUE=/bin/true
 XFCE_TERM=/usr/bin/xfce4-terminal
@@ -37,6 +40,16 @@ LABSHUTDOWN=$BASEDIR/lab.shutdown
 LABPOSTBOOT=$BASEDIR/lab.postboot
 BASHRC=./bashrc
 
+# Est-ce que $2 est dans la liste $1 ?
+aContientB () {
+   for item in $1
+   do
+      if [ "$2" == "$item" ]; then
+         return 0
+      fi
+   done
+   return 1
+}
 
 analyseUnLien () {
    l=$1
@@ -215,13 +228,30 @@ populateFRR () {
    done     
 }
 
+# Lancement d'un démon frr
+# runFRRDaemon host daemon config
+runFRRDaemon () {
+   h=$1
+   d=$2
+   f=$3
+   $IP netns exec $h ${FRR_BIN}/$d -d -N yane-${h} -f $f
+}
+
+# Arrêt d'un démon frr
+# killFRRDaemon host daemon
+killFRRDaemon () {
+   h=$1
+   d=$2
+   kill `cat /var/run/frr/yane-${h}/$d.pid`
+}
+
 # Attention, c'est pas du joli, ... plutôt fragile !
 # Le sourçage de daemons est une horreur
 runFRRDaemons () {
    for h in $FRR_HOSTS
    do
      if [ -f /etc/frr/yane-${h}/daemons ] ; then
-	 # Un petit hack poue zebra qui n'est pas configuré mais toujours
+	 # Un petit hack pour zebra qui n'est pas configuré mais toujours
 	 # lancé. Pas de ça chez nous
 	 zebra=no
 	 if [ -f /etc/frr/yane-${h}/zebra.conf ] ; then
@@ -235,7 +265,8 @@ runFRRDaemons () {
                if [ $VERBOSE == True ] ; then
 	          echo "*  On lance $d sur $h : "
                fi
-	       $IP netns exec $h ${FRR_BIN}/$d -d -N yane-${h} -f /etc/frr/yane-${h}/${d}.conf
+	       runFRRDaemon $h $d /etc/frr/yane-${h}/${d}.conf
+#	       $IP netns exec $h ${FRR_BIN}/$d -d -N yane-${h} -f /etc/frr/yane-${h}/${d}.conf
             fi
 	 done
       fi 
@@ -276,6 +307,7 @@ Les options
  -h                      <- Aide minimaliste
  -H                      <- Documentation
  -V                      <- Afficher la version ($VERSION)
+ -x script               <- Lance un script (eg la solution)
 EOF
 }
 
@@ -292,7 +324,9 @@ Version longue
 
    Il décrit le réseau avec les variables (shell) suivantes
 
-   . HOSTS          la liste des machines
+   . ROUTERS        la liste des routeurs (le routage y sera activé, c'est
+                    la seule différence avec une machine)
+   . HOSTS          la liste de *toutes* les machines (y compris les routeurs)
    . BRIDGES        la liste des ponts
    . LINKS          les liens entre ces équipements
    . FRR_OSTS       les machines sur lesquelles lancer FRR (voir ci dessous)
@@ -359,6 +393,12 @@ do
          fi
 	 runConsoleOnHost $1 "$2"
 	 exit
+      ;;
+      -x )
+         shift
+         loadLabConf
+         . $1
+         exit
       ;;
       * )
          echo "Option '$1' inconnue"
