@@ -3,8 +3,16 @@
 . `dirname $0`/reseauCommun
 
 #--------------------------------------------------------------------
-# Run shutdown script
+# Run shutdown script and remove /etc/ files
 #--------------------------------------------------------------------
+# Shuting down FRR
+if [ -n "$FRR_HOSTS" ] ; then
+   if [ $VERBOSE == True ] ; then
+       echo "* Arrêt de FRR"
+   fi
+   removeFRR 
+fi
+
 if [ -f $LABSHUTDOWN ] ; then
    . $LABSHUTDOWN
 fi
@@ -19,6 +27,12 @@ if [ -f .console-pids ] ; then
    done
    $RM .console-pids
 fi
+
+# Remove /etc files 
+for h in $HOSTS
+do
+    $RM -fr /etc/netns/$h
+done
 
 if [ -f .tcpdump-pids ] ; then 
    if [ $VERBOSE == True ] ; then
