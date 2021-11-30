@@ -1,0 +1,10 @@
+modprobe mpls_router  > /dev/null 2>&1 ||$TRUE
+modprobe mpls_iptunnel 
+mkdir /etc/netns > /dev/null 2>&1 ||$TRUE
+for r in r-1 r-4 r-5
+do
+   mkdir /etc/netns/${r} > /dev/null 2>&1 ||$TRUE
+   mkdir /etc/netns/${r}/iproute2  > /dev/null 2>&1 ||$TRUE
+   cp /etc/iproute2/* /etc/netns/${r}/iproute2
+done
+   
