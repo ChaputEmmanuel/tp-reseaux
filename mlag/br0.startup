@@ -1,0 +1,9 @@
+#!/bin/sh
+ip link add dev br0 type bridge
+ip link set dev fe0 master br0
+ip link set dev fe1 master br0
+ip link set dev fe2 master br0
+for i in fe0 fe1 fe2 fe3 br0
+do 
+   ip link set dev $i up
+done
