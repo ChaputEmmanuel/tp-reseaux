@@ -19,6 +19,13 @@ do
    $IP netns del $h > /dev/null 2>&1 ||$TRUE
    $IP netns add $h
    $IP netns exec $h $IP link set lo up
+   if aContientB "$ROUTERS" "$h" ; then
+      if [ $VERBOSE == True ] ; then
+         echo " (routeur) "
+      fi
+      $IP netns exec $h $SYSCTL -w net.ipv4.ip_forward=1  > /dev/null 2>&1 ||$TRUE
+   fi
+   
    if [ $VERBOSE == True ] ; then
       echo "ok"
    fi
@@ -129,9 +136,13 @@ do
 done
 
 #--------------------------------------------------------------------
-# Run startup script
+# Run startup script and /etc/ files
 #--------------------------------------------------------------------
 if [ -f $LABSTARTUP ] ; then 
+
+   if [ $VERBOSE == True ] ; then
+      echo "* Startup du labo"
+   fi
    . $LABSTARTUP
 fi
 
@@ -143,8 +154,13 @@ $TOUCH /etc/ns-startup
 $MKDIR /etc/netns > /dev/null 2>&1
 for h in $HOSTS
 do
+   if [ -f ${h}.startup -o -d ${h}.etc ] ; then
+       $MKDIR /etc/netns/$h > /dev/null 2>&1
+   fi
+   if [ -d ${h}.etc ] ; then
+      $CP -a ${h}.etc/* /etc/netns/$h/ > /dev/null 2>&1
+   fi
    if [ -f ${h}.startup ] ; then
-      $MKDIR /etc/netns/$h > /dev/null 2>&1
       $CP ${h}.startup /etc/netns/$h/ns-startup
       $IP netns exec $h /bin/bash /etc/ns-startup > /dev/null 2>&1 ||$TRUE
    fi
@@ -153,7 +169,7 @@ done
 # Running FRR
 if [ -n "$FRR_HOSTS" ] ; then
    if [ $VERBOSE == True ] ; then
-       echo "* Configuration de FRR"
+       echo "* Configuration de FRR ($FRR_HOSTS)"
    fi
    populateFRR 
    if [ $VERBOSE == True ] ; then

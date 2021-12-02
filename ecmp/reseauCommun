@@ -1,5 +1,11 @@
 #!/bin/bash
 
+VERSION=1        # Première version numérotée
+VERSION=2        # Introduction de -r h "Commande avec argument"
+VERSION=3        # Lancement de tous les FRR par défaut
+VERSION=4        # Ajout de -x et fonctions run/kill FRRdaemon
+VERSION=5        # Sysctl sur les routeurs (définition de ROUTERS)
+
 VERBOSE=False
 
 BASEDIR=$PWD
@@ -15,7 +21,8 @@ KILL=/bin/kill
 MKFIFO=/usr/bin/mkfifo
 MKDIR=/bin/mkdir
 RM=/bin/rm
-SHELLL=/usr/bin/bash
+SHELLL=/bin/bash
+SYSCTL=/usr/sbin/sysctl
 TOUCH=/usr/bin/touch
 TRUE=/bin/true
 XFCE_TERM=/usr/bin/xfce4-terminal
@@ -33,6 +40,16 @@ LABSHUTDOWN=$BASEDIR/lab.shutdown
 LABPOSTBOOT=$BASEDIR/lab.postboot
 BASHRC=./bashrc
 
+# Est-ce que $2 est dans la liste $1 ?
+aContientB () {
+   for item in $1
+   do
+      if [ "$2" == "$item" ]; then
+         return 0
+      fi
+   done
+   return 1
+}
 
 analyseUnLien () {
    l=$1
@@ -151,6 +168,7 @@ analyseUnLien () {
 # Open a console on a given host
 runConsoleOnHost () {
    h=$1
+   
    if [ -z "`$IP netns list|grep $h`" ] ; then
       echo "*** Unknown host '$h'"
    else
@@ -169,21 +187,29 @@ runConsoleOnHost () {
       else
          TERM="$XTERM -e"
       fi
-      
-      $IP netns exec $h $TERM $CMD >/dev/null 2>&1  &
-      echo $! >> ./.console-pids
+
+      if [ -n "$2" ] ; then
+         $IP netns exec $h $2
+      else
+         $IP netns exec $h $TERM $CMD >/dev/null 2>&1  &
+         echo $! >> ./.console-pids
+      fi
    fi
    
 }
 
 # Load lab.conf
 loadLabConf () {
+   FRR_HOSTS=""
    if [ $VERBOSE == True ] ; then
      echo "* Chargement du fichier de configuration '$LABCONF'"
    fi
 
    if [ -f $LABCONF ] ; then 
       . $LABCONF
+   fi
+   if [ -z "$FRR_HOSTS" -a -d frr ] ; then
+       FRR_HOSTS=`(cd frr ; echo *)`
    fi
 }
 
@@ -202,13 +228,30 @@ populateFRR () {
    done     
 }
 
+# Lancement d'un démon frr
+# runFRRDaemon host daemon config
+runFRRDaemon () {
+   h=$1
+   d=$2
+   f=$3
+   $IP netns exec $h ${FRR_BIN}/$d -d -N yane-${h} -f $f
+}
+
+# Arrêt d'un démon frr
+# killFRRDaemon host daemon
+killFRRDaemon () {
+   h=$1
+   d=$2
+   kill `cat /var/run/frr/yane-${h}/$d.pid`
+}
+
 # Attention, c'est pas du joli, ... plutôt fragile !
 # Le sourçage de daemons est une horreur
 runFRRDaemons () {
    for h in $FRR_HOSTS
    do
      if [ -f /etc/frr/yane-${h}/daemons ] ; then
-	 # Un petit hack poue zebra qui n'est pas configuré mais toujours
+	 # Un petit hack pour zebra qui n'est pas configuré mais toujours
 	 # lancé. Pas de ça chez nous
 	 zebra=no
 	 if [ -f /etc/frr/yane-${h}/zebra.conf ] ; then
@@ -222,7 +265,8 @@ runFRRDaemons () {
                if [ $VERBOSE == True ] ; then
 	          echo "*  On lance $d sur $h : "
                fi
-	       $IP netns exec $h ${FRR_BIN}/$d -d -N yane-${h} -f /etc/frr/yane-${h}/${d}.conf
+	       runFRRDaemon $h $d /etc/frr/yane-${h}/${d}.conf
+#	       $IP netns exec $h ${FRR_BIN}/$d -d -N yane-${h} -f /etc/frr/yane-${h}/${d}.conf
             fi
 	 done
       fi 
@@ -257,11 +301,13 @@ Les options
 -----------
  -f file                 <- Utiliser file comme config réseau
                             (./lab.conf par défaut)
- -r m                    <- Run command on m
+ -r m                    <- Run shell on m
+ -r m "cmd args"         <- Run command on m
  -v                      <- Verbeux
  -h                      <- Aide minimaliste
  -H                      <- Documentation
-
+ -V                      <- Afficher la version ($VERSION)
+ -x script               <- Lance un script (eg la solution)
 EOF
 }
 
@@ -278,27 +324,51 @@ Version longue
 
    Il décrit le réseau avec les variables (shell) suivantes
 
-   . HOSTS      la liste des machines
-   . BRIDGES    la liste des ponts
-   . LINKS      les liens entre ces équipements
-   . FRR_OSTS   les machines sur lesquelles lancer FRR
-   . CONSOLES     "   "       "     "          "   une console
-   . DUMPIF     les interfaces à dumper
+   . ROUTERS        la liste des routeurs (le routage y sera activé, c'est
+                    la seule différence avec une machine)
+   . HOSTS          la liste de *toutes* les machines (y compris les routeurs
+                    qui doivent donc y être re-déclarés, par exemple avec un 
+                    HOSTS="a b c \$ROUTERS")
+   . BRIDGES        la liste des ponts
+   . LINKS          les liens entre ces équipements, c'est une liste de liens
+                    sous la forme [-]h:i[:@]!{h-}:i[:@] où
+                       h est un hôte (défini dans HOSTS ou BRIDGES)
+                       i une interface (ainsi définie)
+                       @ une adresse IPv4 (facultative)
+                    les interfaces sont activées sauf s'il y a un '-' initial,
+                    les adresses IP sont affectées si présentes 
 
-   * Les fichiers de config
+   . FRR_OSTS       les machines sur lesquelles lancer FRR (voir ci dessous)
+   . CONSOLES         "   "       "     "          "   une console
+   . DUMPIF         les interfaces à dumper
+   . LABSTARTUP     le fichier de démarrage du labo
 
-   . lab.startup    lancé au début
-   . lab.shutdown   lancé à l'arrêt
+   * Les fichiers de config du scénario
+
+   ./lab.startup    lancé au début (le nom peut être changé dans lab.conf)
+   ./lab.shutdown   lancé à l'arrêt
+
+   * Les fichiers de config des machines
+
+   ./h.etc          est recopié (sans écraser) sur le /etc de la machine h
 
    * Les fichiers d'init des machines
 
-   ./h.startup pour la machine h
+   ./h.startup      pour la machine h. Il est lancé après la copie des
+                    fichiers et avant l'ouverture des terminaux ou le 
+                    lancement de FRR.
 
    * Les fichiers de config de FRR
 
-   Dans ./frr/h pour la machine h. Le fichier daemons liste les démons
-à lancer. Un fichier de config par démon est nécessaire pour le lancer.
+   ./frr/h          pour la machine h. Le fichier daemons liste les démons
+                    à lancer. Un fichier de config par démon est nécessaire
+                    pour le lancer (eg ./frr/h/ripd.conf pour rip sur la
+                    machine h).
+                    Si la variable FRR_HOSTS est définie, frr ne sera lancé
+                    que sur les machines listées dans cette variable.
 
+   * A faire
+      . /etc/hosts
 EOF
 }
 
@@ -314,6 +384,10 @@ do
          displayDoc
          exit
       ;;
+      -V )
+         echo $VERSION
+         exit
+      ;;
       -v )
          VERBOSE=True
       ;;
@@ -326,8 +400,14 @@ do
          if [ $VERBOSE == True ] ; then
 	    echo "Running a new console on host $1 ..."
          fi
-	 runConsoleOnHost $1
+	 runConsoleOnHost $1 "$2"
 	 exit
+      ;;
+      -x )
+         shift
+         loadLabConf
+         . $1
+         exit
       ;;
       * )
          echo "Option '$1' inconnue"
