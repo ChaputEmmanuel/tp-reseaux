@@ -1,0 +1,12 @@
+# Pour ne pas être embété par des rêgles iptables
+echo 0 > /proc/sys/net/bridge/bridge-nf-call-iptables
+
+# On désactive IPv6 (bourrin, c'est pour ne pas voir
+# de sollicitations)
+for i in jeff jeff.v0 jeff.v1 jeff.v2 jeff.v3 jeff.v4
+do
+   echo 1 > /proc/sys/net/ipv6/conf/$i/disable_ipv6
+done
+
+# Le pont devient un hub
+brctl setageing jeff 0 

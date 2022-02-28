@@ -1,0 +1,421 @@
+#!/bin/bash
+
+VERSION=1        # Première version numérotée
+VERSION=2        # Introduction de -r h "Commande avec argument"
+VERSION=3        # Lancement de tous les FRR par défaut
+VERSION=4        # Ajout de -x et fonctions run/kill FRRdaemon
+VERSION=5        # Sysctl sur les routeurs (définition de ROUTERS)
+
+VERBOSE=False
+
+BASEDIR=$PWD
+BRCTL=/sbin/brctl
+BRIDGE=/sbin/bridge
+CHMOD=/bin/chmod
+CHOWN=/bin/chown
+CP=/bin/cp
+FRR_BIN=/usr/lib/frr
+GNOME_TERM=/usr/bin/gnome-terminal-NO
+IP=/sbin/ip
+KILL=/bin/kill
+MKFIFO=/usr/bin/mkfifo
+MKDIR=/bin/mkdir
+RM=/bin/rm
+SHELLL=/bin/bash
+SYSCTL=/usr/sbin/sysctl
+TOUCH=/usr/bin/touch
+TRUE=/bin/true
+XFCE_TERM=/usr/bin/xfce4-terminal
+XTERM=/usr/bin/xterm
+
+if [ $UID != 0 ] ; then
+   echo "Il est nécessaire d'être administrateur"
+   echo "Exécutez d'abord la commade sudo su"
+   exit
+fi
+
+LABCONF=$BASEDIR/lab.conf
+LABSTARTUP=$BASEDIR/lab.startup
+LABSHUTDOWN=$BASEDIR/lab.shutdown
+LABPOSTBOOT=$BASEDIR/lab.postboot
+BASHRC=./bashrc
+
+# Est-ce que $2 est dans la liste $1 ?
+aContientB () {
+   for item in $1
+   do
+      if [ "$2" == "$item" ]; then
+         return 0
+      fi
+   done
+   return 1
+}
+
+analyseUnLien () {
+   l=$1
+
+   # Format [-]h:i[:@]!{h-}:i[:@]
+   #-----------------------
+   if [ $VERBOSE == True ] ; then
+       echo "    Link $l ..."
+   fi
+   
+   # Parsing source
+   #---------------
+   # Do not set up if name has a leading -
+   doSetUp=True
+   if [ "${l:0:1}" == "-" ] ; then
+       doSetUp=False
+       if [ $VERBOSE == True ] ; then
+           echo "      Unactive"
+       fi
+       l=${l#*-}
+       if [ $VERBOSE == True ] ; then
+           echo "      Using $l"
+       fi 
+   else
+       if [ $VERBOSE == True ] ; then
+	   echo "      On active $l"
+       fi
+   fi
+
+   src=`echo $l| cut -d! -f1`
+   srch=`echo $src|cut -d: -f1`
+   if [ -z "$srch" ] ; then
+      echo "*** No source host defined in '$l'"
+      exit
+   fi
+   srcIsBr=no
+   if [ -z "`$IP netns list|grep $srch`" ] ; then
+       for br in $BRIDGES
+       do
+	   if [ $br == $srch ] ; then
+               if [ $VERBOSE == True ] ; then
+	           echo "       $srch is a bridge"
+	       fi
+	       srcIsBr=yes
+	   fi
+       done
+       if [ "$srcIsBr" == "no" ] ; then
+	   echo "*** Unknown host '$srch'"
+	   exit
+       fi
+   fi
+   srci=`echo $src|cut -d: -f2`
+   if [ -z "$srci" ] ; then
+      echo "*** No source interface defined in '$l'"
+      exit
+   fi
+   
+   if [ "$srcIsBr" == "no" ] ; then
+       IFLIST="$IFLIST $srch:$srci"
+   fi
+   srca=`echo $src|cut -d: -f3`
+
+   # Parsing destination
+   #--------------------
+   dst=`echo $l| cut -d! -f2`
+   dsth=`echo $dst|cut -d: -f1`
+   if [ -z "$dsth" ] ; then
+      echo "*** No destination host defined in '$l'"
+      exit
+   fi
+   dstIsBr=no
+
+   if [ "$dsth" == "-" ] ; then
+      echo "Pouet pouet" > /dev/null
+   elif [ -z "`$IP netns list|grep $dsth`" ] ; then
+       for br in $BRIDGES
+       do
+	   if [ $br == $dsth ] ; then
+               if [ $VERBOSE == True ] ; then
+	           echo "       Dst is a bridge"
+	       fi
+	       dstIsBr=yes
+	   fi
+       done
+       if [ "$dstIsBr" == "no" ] ; then
+	   echo "*** Unknown host '$dsth'"
+	   exit
+       fi
+   fi
+   dsti=`echo $dst|cut -d: -f2`
+   if [ -z ""$dsti -a "$dstIsBr" == "no" ] ; then
+      echo "*** No destination interface defined in '$l'"
+      exit
+   fi
+   if [ "$dstIsBr" == "no" ] ; then
+       IFLIST="$IFLIST $dsth:$dsti"
+   fi
+   dsta=`echo $dst|cut -d: -f3`
+   if [ $VERBOSE == True ] ; then
+       echo "       $srch ($srci)  <-> $dsth ($dsti)"
+       if [ -n "$srca" ] ; then
+	   echo "       $srch : $srca"
+       fi   
+       if [ -n "$dsta" ] ; then
+	   echo "       $dsth : $dsta"
+       fi   
+   fi
+
+   # I only build links where dstIsBr or !srcIsBr
+   #---------------------------------------------
+   if [ "$srcIsBr" == "yes" -a "$dstIsBr" == "no" ] ; then
+      echo "Forbiden bridge to host link : $l"
+   fi
+}
+
+# Open a console on a given host
+runConsoleOnHost () {
+   h=$1
+   
+   if [ -z "`$IP netns list|grep $h`" ] ; then
+      echo "*** Unknown host '$h'"
+   else
+      CMD=$SHELLL
+      if [ -n "$BASHRC" -a -f $BASHRC ] ; then
+         CMD="$CMD --rcfile $BASHRC"
+      fi
+
+      # if gnome terminal is available ...
+      if [ -f $GNOME_TERM ] ; then
+         TERM="dbus-launch $GNOME_TERM --"
+      # ... if xfce terminal is available ...
+      elif [ -f $XFCE_TERM ] ; then
+         TERM="$XFCE_TERM -x"
+      # ... otherwise, fallback to xterm
+      else
+         TERM="$XTERM -e"
+      fi
+
+      if [ -n "$2" ] ; then
+         $IP netns exec $h $2
+      else
+         $IP netns exec $h $TERM $CMD >/dev/null 2>&1  &
+         echo $! >> ./.console-pids
+      fi
+   fi
+   
+}
+
+# Load lab.conf
+loadLabConf () {
+   FRR_HOSTS=""
+   if [ $VERBOSE == True ] ; then
+     echo "* Chargement du fichier de configuration '$LABCONF'"
+   fi
+
+   if [ -f $LABCONF ] ; then 
+      . $LABCONF
+   fi
+   if [ -z "$FRR_HOSTS" -a -d frr ] ; then
+       FRR_HOSTS=`(cd frr ; echo *)`
+   fi
+}
+
+# Populate FRR config for a given list of hosts
+# for each host $h, the content of ./ftt/$h is copied
+# to /etc/frr/yane-$h 
+FRR_HOSTS=""
+populateFRR () {
+   for h in $FRR_HOSTS
+   do 
+      $MKDIR /etc/frr/yane-$h
+      $CP -a ./frr/${h}/* /etc/frr/yane-$h
+      $CHOWN -R frr.frr /etc/frr/yane-$h
+      $MKDIR /var/run/frr/yane-$h
+      $CHOWN -R frr.frr /var/run/frr/yane-$h
+   done     
+}
+
+# Lancement d'un démon frr
+# runFRRDaemon host daemon config
+runFRRDaemon () {
+   h=$1
+   d=$2
+   f=$3
+   $IP netns exec $h ${FRR_BIN}/$d -d -N yane-${h} -f $f
+}
+
+# Arrêt d'un démon frr
+# killFRRDaemon host daemon
+killFRRDaemon () {
+   h=$1
+   d=$2
+   kill `cat /var/run/frr/yane-${h}/$d.pid`
+}
+
+# Attention, c'est pas du joli, ... plutôt fragile !
+# Le sourçage de daemons est une horreur
+runFRRDaemons () {
+   for h in $FRR_HOSTS
+   do
+     if [ -f /etc/frr/yane-${h}/daemons ] ; then
+	 # Un petit hack pour zebra qui n'est pas configuré mais toujours
+	 # lancé. Pas de ça chez nous
+	 zebra=no
+	 if [ -f /etc/frr/yane-${h}/zebra.conf ] ; then
+            zebra=yes
+	 fi
+	 
+         . /etc/frr/yane-${h}/daemons
+  	 for d in zebra bgpd ripd ospfd pimd ldpd 
+	 do
+            if [ -f /etc/frr/yane-${h}/${d}.conf -a ${!d} == "yes" ] ; then
+               if [ $VERBOSE == True ] ; then
+	          echo "*  On lance $d sur $h : "
+               fi
+	       runFRRDaemon $h $d /etc/frr/yane-${h}/${d}.conf
+#	       $IP netns exec $h ${FRR_BIN}/$d -d -N yane-${h} -f /etc/frr/yane-${h}/${d}.conf
+            fi
+	 done
+      fi 
+   done     
+}
+
+removeFRR () {
+for h in $FRR_HOSTS
+   do
+      for p in `cat /var/run/frr/yane-${h}/*.pid`
+      do
+         kill -9 $p
+      done
+      rm -fr /etc/frr/yane-$h
+      rm -fr /var/run/frr/yane-$h
+   done
+}    
+
+#-------------------------------------------------------------------------
+# La doc
+#-------------------------------------------------------------------------
+displayHelp() {
+cat <<EOF
+Version courte
+--------------
+sudo ./creerReseau       <- Démarrer une émulation de réseau
+sudo ./detruireReseau    <- Terminer une émulation en cours
+sudo ./creerReseu -r m   <- Ouvrir un terminal sur la machine m
+                            dans une émulation en cours
+
+Les options
+-----------
+ -f file                 <- Utiliser file comme config réseau
+                            (./lab.conf par défaut)
+ -r m                    <- Run shell on m
+ -r m "cmd args"         <- Run command on m
+ -v                      <- Verbeux
+ -h                      <- Aide minimaliste
+ -H                      <- Documentation
+ -V                      <- Afficher la version ($VERSION)
+ -x script               <- Lance un script (eg la solution)
+EOF
+}
+
+displayDoc() {
+   displayHelp
+    
+cat <<EOF
+Version longue
+--------------
+
+   Un.e volontaire pour écrire la doc ?
+
+   * Le fichier lab.conf
+
+   Il décrit le réseau avec les variables (shell) suivantes
+
+   . ROUTERS        la liste des routeurs (le routage y sera activé, c'est
+                    la seule différence avec une machine)
+   . HOSTS          la liste de *toutes* les machines (y compris les routeurs
+                    qui doivent donc y être re-déclarés, par exemple avec un 
+                    HOSTS="a b c \$ROUTERS")
+   . BRIDGES        la liste des ponts
+   . LINKS          les liens entre ces équipements, c'est une liste de liens
+                    sous la forme [-]h:i[:@]!{h-}:i[:@] où
+                       h est un hôte (défini dans HOSTS ou BRIDGES)
+                       i une interface (ainsi définie)
+                       @ une adresse IPv4 (facultative)
+                    les interfaces sont activées sauf s'il y a un '-' initial,
+                    les adresses IP sont affectées si présentes 
+
+   . FRR_OSTS       les machines sur lesquelles lancer FRR (voir ci dessous)
+   . CONSOLES         "   "       "     "          "   une console
+   . DUMPIF         les interfaces à dumper
+   . LABSTARTUP     le fichier de démarrage du labo
+
+   * Les fichiers de config du scénario
+
+   ./lab.startup    lancé au début (le nom peut être changé dans lab.conf)
+   ./lab.shutdown   lancé à l'arrêt
+
+   * Les fichiers de config des machines
+
+   ./h.etc          est recopié (sans écraser) sur le /etc de la machine h
+
+   * Les fichiers d'init des machines
+
+   ./h.startup      pour la machine h. Il est lancé après la copie des
+                    fichiers et avant l'ouverture des terminaux ou le 
+                    lancement de FRR.
+
+   * Les fichiers de config de FRR
+
+   ./frr/h          pour la machine h. Le fichier daemons liste les démons
+                    à lancer. Un fichier de config par démon est nécessaire
+                    pour le lancer (eg ./frr/h/ripd.conf pour rip sur la
+                    machine h).
+                    Si la variable FRR_HOSTS est définie, frr ne sera lancé
+                    que sur les machines listées dans cette variable.
+
+   * A faire
+      . /etc/hosts
+EOF
+}
+
+# Parse command line options
+while [[ $# > 0 ]] ;
+do
+   case "$1" in
+      -h )
+         displayHelp
+         exit
+      ;;
+      -H )
+         displayDoc
+         exit
+      ;;
+      -V )
+         echo $VERSION
+         exit
+      ;;
+      -v )
+         VERBOSE=True
+      ;;
+      -f )
+         shift
+	 LABCONF="$1" 
+      ;;
+      -r )
+         shift
+         if [ $VERBOSE == True ] ; then
+	    echo "Running a new console on host $1 ..."
+         fi
+	 runConsoleOnHost $1 "$2"
+	 exit
+      ;;
+      -x )
+         shift
+         loadLabConf
+         . $1
+         exit
+      ;;
+      * )
+         echo "Option '$1' inconnue"
+         exit
+      ;;
+   esac
+   shift
+done
+
+loadLabConf
+
