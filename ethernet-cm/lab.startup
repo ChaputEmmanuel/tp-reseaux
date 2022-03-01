@@ -1,0 +1,16 @@
+# Pour ne pas être embété par des rêgles iptables
+echo 0 > /proc/sys/net/bridge/bridge-nf-call-iptables
+
+# On active le pont
+for i in jeff jeff.v0 jeff.v1 jeff.v2 jeff.v3 jeff.v4
+do
+   ip link set dev $i up
+done
+
+# On désactive IPv6 (bourrin, c'est pour ne pas voir
+# de sollicitations)
+for i in jeff jeff.v0 jeff.v1 jeff.v2 jeff.v3 jeff.v4
+do
+   echo 1 > /proc/sys/net/ipv6/conf/$i/disable_ipv6
+done
+
