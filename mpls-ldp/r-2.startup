@@ -1,8 +1,0 @@
-/sbin/sysctl -w net.mpls.platform_labels=4096
-for i in lo  fe0 fe1 all default
-do
-   /sbin/sysctl -w net.ipv4.conf.${i}.rp_filter=0
-   /sbin/sysctl -w net.mpls.conf.${i}.input=1
-done
-
-/sbin/sysctl -w net.ipv4.ip_forward=1

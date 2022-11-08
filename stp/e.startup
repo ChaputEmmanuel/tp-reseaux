@@ -1,0 +1,4 @@
+for i in  /proc/sys/net/ipv6/conf/*
+do
+   echo 1 > $i/disable_ipv6
+done

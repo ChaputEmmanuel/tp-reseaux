@@ -1,0 +1,2 @@
+/usr/sbin/ip route add default via 17.0.42.4
+

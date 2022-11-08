@@ -1,0 +1,13 @@
+/sbin/sysctl -w net.mpls.platform_labels=4096
+for i in lo  fe0 fe1 all default
+do
+   /sbin/sysctl -w net.ipv4.conf.${i}.rp_filter=0
+   /sbin/sysctl -w net.mpls.conf.${i}.input=1
+done
+
+/sbin/sysctl -w net.ipv4.ip_forward=1
+
+# Pour les identifiants d'OSPF
+/usr/sbin/ip link add d0 type dummy
+/usr/sbin/ip link set d0 up
+/usr/sbin/ip addr add 10.0.0.2/32 dev d0
